@@ -1,0 +1,9 @@
+--- Adding "Kijk" to the dynamic menu ---
+
+1. Place the folder "plugin_kijk" in you praat preferences folder
+    a. To find the preferences open a "New Praat script"and type the following:
+             writeInfoLine: preferencesDirectory$
+
+2. Restart Praat.
+
+3. When you select your EMA file in Praat's objects window the button "Kijk" will appear last in the dynamic menu.
