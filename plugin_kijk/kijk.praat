@@ -3,7 +3,9 @@
 #   Author: Lins Machado, C.
 #   Correspondence: carolina@machado.eti.br
 #
-# praat version >= 6.2.13	
+# praat version >= 6.2.13
+#
+# kijk version 0.2
 #
 
 clearinfo
@@ -18,7 +20,8 @@ form Kijk - visualize EMA trajectories
     comment Indicate the sensor number, name, and axis you wish to view
     sentence Sensor_number 3 5
     sentence Sensor_name TD TB
-    sentence Dimension X Y Z
+    sentence Dimension X Y
+    boolean Custom_table 0
     choice Device: 1
         button NDI wave
         button AG501
@@ -34,11 +37,15 @@ axis$# = splitByWhitespace$# (dimension$)
 regexAxis$ = "["+replace$(dimension$, " ", "", 0)+"]"
 
 
-# 4- Check device used
+# 4- Check device used and if data input has custom headers
 if device = 1
-    @processNDI: table$
-    @dataToExtract: table$
-else
+    if custom_table = 1
+        @dataToExtract: table$
+    else
+        @processNDI: table$
+        @dataToExtract: table$
+    endif
+ else
     @dataToExtract: table$
 endif
 
@@ -89,43 +96,54 @@ procedure processNDI: .inTable$
         endfor
 
     removeObject: refTable 
+   
 endproc
 
 
 # 6- Sensors and axes to be extracted
 procedure dataToExtract: .inTable$
-    .refNames$# = empty$#(size(sensors$#))
+    .refNames$# = empty$#(size(names$#))
+     # appendInfoLine: size(names$#) ; = 1
 
     selectObject: .inTable$
-         if device = 1
-            .emaStart = Get value: 1, "# AudioTime[s]"
+         if device != 2
+            colLabel$ = Get column label: 1
+            if index_regex(colLabel$, "(?itime)")
+                .emaStart = Get value: 1, colLabel$ ; starting time for NDI device
+            endif
         endif
         traponsedTable = Transpose
         Set column label (index): 1, "col_names"
 
-        for i to size(sensors$#)
+        for i to size(names$#)
             selectObject: traponsedTable
-                if device = 2
-                    sensorID$ = "Ch"+sensors$#[i]+"_"
-                    sensorTable = Extract rows where column (text): "col_names", "contains", sensorID$
+                if custom_table = 1
+                    sensorTable = Extract rows where column (text): "col_names", "contains", names$#[i]
+                    nameEMA$ = "EMA_Sensor_"+names$#[i]
                 else
-                    sensorTable = Extract rows where column (text): "col_names", "contains", sensors$#[i]
+                    if device = 1
+                        sensorTable = Extract rows where column (text): "col_names", "contains", sensors$#[i]
+                    else
+                        sensorID$ = "Ch"+sensors$#[i]+"_"
+                        sensorTable = Extract rows where column (text): "col_names", "contains", sensorID$
+                    endif                 
+                    nameEMA$ = "EMA_Sensor_"+sensors$#[i]+"_"+names$#[i]
                 endif
-                Rename: "EMA_Sensor_"+sensors$#[i]+"_"+names$#[i]
                 
+                Rename: nameEMA$
+                .refNames$# [i] = nameEMA$
+
                 nRow = Get number of rows
                 for n to nRow
                     backN = nRow - n + 1
                     val$ = Get value: backN, "col_names"
-                    if index_regex(val$, regexAxis$)
+                    if index_regex(val$, regexAxis$) ;select only desired dimensions
                     else
                         selectObject: sensorTable
                         Remove row: backN
                     endif
                 endfor
                 
-            .refNames$# [i] = "EMA_Sensor_"+sensors$#[i]+"_"+names$#[i]
-
             @toSignal: sensorTable
 
         endfor
@@ -141,9 +159,13 @@ procedure toSignal: .inTable
         emaChannels = To Sound
         emaName$ = selected$("Sound")
         Override sampling frequency: sampling_frequency
-            if device = 1
-                Shift times to: "start time", dataToExtract.emaStart
-            endif
+            # get starting time of wave and ema element
+                if device = 1
+                    if dataToExtract.emaStart != 0
+                        Shift times to: "start time", dataToExtract.emaStart
+                    endif
+                endif            
+
         .emaFinal$ = selected$("Sound")
         
     if combine_sensors = 0
@@ -173,7 +195,6 @@ endif
 
 # 9- Output channel correspondences  
 procedure infoOutput: .inSound$
-
     if combine_sensors = 0
         appendInfoLine: "Summary of ", .inSound$
         for .a to size(axis$#)
@@ -184,11 +205,20 @@ procedure infoOutput: .inSound$
         appendInfoLine: "Summary of ", .inSound$
         appendInfoLine: ""
         .incrementer = 1
-        for .i to size(sensors$#)
-            for .j to size(axis$#)
-                appendInfoLine: "Ch ", .incrementer, ": ", names$#[.i], "_", axis$#[.j]
-                .incrementer +=1
-            endfor
+        for .i to size(names$#)
+            if custom_table = 1
+                appendInfoLine: "Sensor: ", names$#[.i]
+                for .j to size(axis$#)
+                     appendInfoLine: "Ch ", .incrementer, ": ", axis$#[.j]
+                     .incrementer +=1
+                endfor
+            else
+                appendInfoLine: "Sensor: ", sensors$#[.i], " (", names$#[.i], ")"
+                for .j to size(axis$#)
+                    appendInfoLine: "Ch ", .incrementer, ": ", names$#[.i], "_", axis$#[.j]
+                    .incrementer +=1
+                 endfor
+            endif
         endfor      
     endif
 endproc
